@@ -1070,6 +1070,59 @@ class MAFReader(VariantReader):
                 sample_ix=self.col_sample_ix + 1, chrom_ix=self.col_chrom_ix + 1, pos_ix=self.col_pos_ix + 1,
                 infn=infn, outfn=outfn)
 
+class CustomMAFReader(VariantReader):
+    """
+    사용자가 제공한 특정 형식의 MAF 파일('original_annotated_selected.txt')을 파싱합니다.
+    - Location: e.g., '10:122640432'
+    - Uploaded_variation: e.g., '10_122640432_T/C'
+    """
+    def __init__(self, f, pass_only=True, type_snvs=False):
+        super().__init__(f, pass_only, type_snvs)
+        # 파일의 헤더 라인을 읽고 건너뜁니다.
+        self.header = self.f.readline().strip().split('\t')
+        try:
+            # 필요한 컬럼의 인덱스를 찾습니다.
+            self.loc_idx = self.header.index("Location")
+            self.var_idx = self.header.index("Uploaded_variation")
+            self.sample_id = "default_sample" # MAF 파일에 샘플 ID가 없으므로 기본값 사용
+        except ValueError as e:
+            raise IOError(f"MAF 파일 헤더에 필수 컬럼이 없습니다: {e}")
+
+    def __next__(self):
+        line = self.f.readline()
+        if not line:
+            # 파일의 끝에 도달하면 EOF Variant를 반환합니다.
+            return Variant(chrom=VariantReader.EOF, pos=-1, ref='', alt='', sample_id=self.sample_id)
+
+        fields = line.strip().split('\t')
+        
+        try:
+            # 1. 위치 정보 파싱 ('Location' 컬럼)
+            location = fields[self.loc_idx]
+            chrom, pos_str = location.split(':')
+            pos = int(pos_str)
+
+            # 2. 염기 정보 파싱 ('Uploaded_variation' 컬럼)
+            variation_info = fields[self.var_idx]
+            _, _, alleles = variation_info.split('_')
+            ref, alt = alleles.split('/')
+            
+            # 3. Variant 객체 생성
+            variant = Variant(
+                chrom=chrom,
+                pos=pos,
+                ref=ref,
+                alt=alt,
+                sample_id=self.sample_id,
+                vtype="SNV" # 이 리더는 SNV만 처리한다고 가정
+            )
+            return variant
+            
+        except (ValueError, IndexError) as e:
+            # 줄을 파싱하는 데 실패하면 건너뜁니다.
+            # print(f"Warning: Could not parse line, skipping: {line.strip()}\nError: {e}")
+            return self.__next__() # 다음 줄로 넘어갑니다.
+
 
 def test_get_context_seq():
     # Mock reference genome (chr1: positions 0–49)
