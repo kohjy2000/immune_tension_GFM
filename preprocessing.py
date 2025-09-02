@@ -481,14 +481,24 @@ def preprocessing_vcf_tokenizing(vcf_file,genome_reference_path,tmp_dir,dict_mot
     vcf_file = multifiles_handler(vcf_file)
     vcf_file = [resolve_path(x) for x in vcf_file]
 
-    preprocessing_vcf(vcf_file,genome_reference_path,tmp_dir, verbose= verbose)
-    #pdb.set_trace()
-    all_preprocessed_vcf = []
+    # 파일 타입별로 분류
+    vcf_files = [f for f in vcf_file if f.endswith(('.vcf', '.vcf.gz'))]
+    maf_files = [f for f in vcf_file if f.endswith(('.maf', '.maf.gz'))]
 
+    if vcf_files:
+        preprocessing_vcf(vcf_files, genome_reference_path, tmp_dir, verbose=verbose)
+    if maf_files:
+        preprocessing_maf(maf_files, genome_reference_path, tmp_dir, verbose=verbose)
+    
+    # preprocessing_vcf(vcf_file,genome_reference_path,tmp_dir, verbose= verbose)
+    # pdb.set_trace()
+    all_preprocessed_vcf = []
     tmp_dir = ensure_dirpath(tmp_dir)
+    
     for x in vcf_file:
         if os.path.exists(tmp_dir + get_sample_name(x) + '.gc.genic.exonic.cs.tsv.gz'):
             all_preprocessed_vcf.append(tmp_dir + get_sample_name(x) + '.gc.genic.exonic.cs.tsv.gz')
+            
     #pdb.set_trace()
     return tokenizing(dict_motif,dict_pos,dict_ges,all_preprocessed_vcf,tmp_dir)
     
@@ -551,6 +561,38 @@ def preprocessing_vcf(vcf_file,genome_reference_path,tmp_dir,info_column=None,ve
         get_motif_pos_ges(fn,genome_ref,tmp_dir,verbose=verbose)
 
     return 1
+
+def preprocessing_maf(maf_files, genome_reference_path, tmp_dir, verbose=True):
+    """MAF 파일 전처리 (VCF 로직 재활용)"""
+    if not os.path.exists(genome_reference_path):
+        print('[INFO] reference file not found')
+        # 참조 다운로드 로직...
+        
+    print('[INFO] Loading reference genome...')
+    genome_ref = read_reference(genome_reference_path, verbose=verbose)   
+
+    fns = multifiles_handler(maf_files)
+    fns = [resolve_path(x) for x in fns]
+    tmp_dir = ensure_dirpath(tmp_dir)
+
+    for i, fn in enumerate(fns):
+        get_motif_pos_ges_maf(fn, genome_ref, tmp_dir, verbose=verbose)
+
+def get_motif_pos_ges_maf(fn, genome_ref, tmp_dir, verbose=True):
+    """MAF 파일용 motif/pos/ges 추출"""
+    tmp_dir = ensure_dirpath(tmp_dir)
+    
+    try:
+        # MAF 리더 사용
+        f, sample_name = open_stream(fn)
+        vr = MAFReader(f=f, pass_only=True, type_snvs=False)
+        status('Writing mutation sequences...', verbose)
+        process_input(vr, sample_name, genome_ref, tmp_dir, verbose=verbose)        
+        f.close()
+        return 1
+    except Exception as e:
+        print(f"Error: {e}")
+        return 0
 
 def load_dict(dict_path):
     with open(dict_path, 'r') as f:
